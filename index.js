@@ -1,0 +1,72 @@
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeCodeWASync } = require('@whiskeysockets/baileys');
+const qrcode = require('qrcode-terminal');
+const { Boom } = require('@hapi/boom');
+const chalk = require('chalk');
+
+async function startBot() {
+    const { state, saveCreds } = await useMultiFileAuthState('./auth');
+    
+    const conn = makeWASocket({
+        auth: state,
+        printQRInTerminal: false, // Desactivamos el QR viejo
+        syncFullHistory: false
+    });
+
+    conn.ev.on('creds.update', saveCreds);
+
+    conn.ev.on('connection.update', async (update) => {
+        const { connection, qr, lastDisconnect } = update;
+        
+        // ✅ AHORA TE MUESTRA EL CÓDIGO NUMÉRICO
+        if (qr) {
+            console.log(chalk.blue('\n📲 PARA VINCULAR TU WHATSAPP:'));
+            const code = await makeCodeWASync(qr);
+            console.log(chalk.green(`🔑 TU CÓDIGO ES: ${code}`));
+            console.log(chalk.yellow('👉 Abre WhatsApp > Dispositivos vinculados > Vincular dispositivo > Escribe este código\n'));
+        }
+
+        if(connection === 'open') {
+            console.log(chalk.green('✅ HATSUNE MIKU BOT CONECTADO EXITOSAMENTE! YA FUNCIONA 🚀'));
+        }
+
+        if(connection === 'close') {
+            const shouldReconnect = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log(chalk.red('❌ Conexión cerrada, reconectando...'));
+            if(shouldReconnect) startBot();
+        }
+    });
+
+    // COMANDOS DEL BOT
+    conn.ev.on('messages.upsert', async m => {
+        const msg = m.messages[0];
+        if(!msg.key.fromMe && msg.message) {
+            const remitente = msg.key.remoteJid;
+            const texto = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+
+            if(texto.toLowerCase() === '.menu') {
+                await conn.sendMessage(remitente, { 
+                    text: `╭━━━━━━━━━━━━━━━━╮
+┃ ✨ 𝑯𝒂𝒕𝒔𝒖𝒏𝒆 𝑴𝒊𝒌𝒖 𝑩𝒐𝒕 ✨
+┃ Hecho con amor por Yoel 💖
+┣━━━━━━━━━━━━━━━━┫
+┃ 📋 *COMANDOS DISPONIBLES*
+┃ .menu - Ver este menú
+┃ .info - Información del bot
+┃ .canal - Ir al canal
+╰━━━━━━━━━━━━━━━━╯`
+                });
+            }
+
+            if(texto.toLowerCase() === '.info') {
+                await conn.sendMessage(remitente, { 
+                    text: `🤖 *HATSUNE MIKU BOT*
+Versión: 1.0.0
+Creador: Yoel
+Estado: Activo 24/7`
+                });
+            }
+        }
+    });
+}
+
+startBot();
